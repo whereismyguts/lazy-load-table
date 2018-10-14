@@ -1,77 +1,97 @@
-import sqlite3
+
 import sys
 
-from PyQt5.QtCore import QAbstractTableModel, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from dbProvider import SQLiteLayer
+from dbProvider import DbConnectionError, QueryExecutionError
 
-from window import UiMainWindow
+from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
+
+from window import Ui_MainWindow
 
 
-class QueryResultTableModel(QAbstractTableModel):
-    def __init__(self, items):
-        super(QueryResultTableModel, self).__init__()
+class ResultTableModel(QAbstractTableModel):
+    def __init__(self, items, headers):
+        super(ResultTableModel, self).__init__()
         self.items = items
+        self.headers = headers
+
+    def headerData(self, section, orientation, role):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return QVariant(self.headers[section])
 
     def rowCount(self, parent):
         return len(self.items)
 
     def columnCount(self, parent):
-        return len(self.items[0])
+        if self.items:
+            return len(self.items[0])
+        if self.headers:
+            return len(self.headers)
+        return 0
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
             row = self.items[index.row()]
-            return row[index.column()]        
+            return row[index.column()]
 
 
-class MainWindow(QMainWindow, UiMainWindow):
-    
-    connection = None
-    connection_string = ""
-    createSql = "CREATE TABLE users (id integer, name text, address text)"
+class MainWindow(QMainWindow, Ui_MainWindow):
+
+    createSql = "select * from customer"
     selectSql = "select * from users"
 
     def __init__(self, parent=None):
         QMainWindow.__init__(self)
-        UiMainWindow.__init__(self)
+        Ui_MainWindow.__init__(self)
         self.setupUi(self)
 
         self.executeBtn.clicked.connect(self.executeQuery)
-        self.resultTable.horizontalHeader().hide()
+        self.openBtn.clicked.connect(self.openFile)
         self.resultTable.verticalHeader().hide()
         self.queryTextEdit.setText(self.createSql)
         self.connectionStringLineEdit.setText(":memory:")
         self.outputTextView.setReadOnly(True)
+        self.db_layer = SQLiteLayer()
 
+    def openFile(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        fileName, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open database",
+            "",
+            "SQLite database files (*.db *.sqlite *.db3 *.sqlite3)",
+            options=options)
+        if fileName:
+            self.connectionStringLineEdit.setText(fileName)
 
     def executeQuery(self):
         con_string = str(self.connectionStringLineEdit.text())
-        if self.connection_string != con_string and self.connection:
-            self.connection.close()
-            self.connection = None
-
-        if not self.connection:    
-            self.connection = sqlite3.connect(con_string)
-            self.connection_string = con_string
-
-        cursor = self.connection.cursor()
+        query = str(self.queryTextEdit.toPlainText())
         try:
-            query = str(self.queryTextEdit.toPlainText())
-            cursor.execute(query)
-            self.connection.commit()
-            result = cursor.fetchall()
-            if result:
-                self.resultTable.setModel(QueryResultTableModel(result))
-            else:
-                self.outputTextView.append( "\n%s\nSuccess.\n" % query)                                
-                
-        except (sqlite3.OperationalError, sqlite3.Warning) as e:
-            self.outputTextView.append( "\n%s\nError: %s\n" % (query, e))
+            result, headers = self.db_layer.execute_query(con_string, query)
+            self.resultTable.setModel(ResultTableModel(result, headers))
+            self.outputTextView.append("\n%s\nSuccess.\n" % (query))
+
+        except DbConnectionError as ce:
+            self.outputTextView.append(
+                "\n%s\nConnection error: %s\n" % (query, ce)
+            )
+        except QueryExecutionError as ee:
+            self.outputTextView.append(
+                "\n%s\nExecution error: %s\n" % (query, ee)
+            )
+        self.outputTextView.ensureCursorVisible()
 
     def closeEvent(self, event):
-        if self.connection:
-            self.connection.close()
+        self.db_layer.close()
         event.accept()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_F5:
+            self.executeQuery()
+
 
 def app_main(args):
     app = QApplication(sys.argv)
