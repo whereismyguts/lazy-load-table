@@ -14,7 +14,7 @@ class DbConnectionError(Exception):
         self.errors = errors
 
 
-class SQLiteLayer():
+class SQLiteLayer:
 
     def __init__(self):
         self.connection_string = ""

@@ -18,7 +18,8 @@ class ResultTableModel(QAbstractTableModel):
 
     def headerData(self, section, orientation, role):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return QVariant(self.headers[section])
+            return self.headers[section]
+        return QAbstractTableModel.headerData(self, section, orientation, role)
 
     def rowCount(self, parent):
         return len(self.items)
@@ -28,12 +29,13 @@ class ResultTableModel(QAbstractTableModel):
             return len(self.items[0])
         if self.headers:
             return len(self.headers)
-        return 0
+        return QAbstractTableModel.columnCount(self, parent)
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
             row = self.items[index.row()]
             return row[index.column()]
+        return QAbstractTableModel.data(self, index, role)    
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
